@@ -27,12 +27,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchProfileAndRoles = useCallback(async (userId: string) => {
-    const [profileRes, rolesRes] = await Promise.all([
-      supabase.from("profiles").select("id, name, email, gym_id, avatar_url").eq("id", userId).single(),
-      supabase.from("user_roles").select("role").eq("user_id", userId),
-    ]);
-    if (profileRes.data) setProfile(profileRes.data);
-    if (rolesRes.data) setRoles(rolesRes.data.map((r: any) => r.role as AppRole));
+    try {
+      const [profileRes, rolesRes] = await Promise.all([
+        supabase.from("profiles").select("id, name, email, gym_id, avatar_url").eq("id", userId).single(),
+        supabase.from("user_roles").select("role").eq("user_id", userId),
+      ]);
+
+      if (profileRes.error) {
+        console.error("Failed to fetch profile:", profileRes.error);
+      } else if (profileRes.data) {
+        setProfile(profileRes.data);
+      }
+
+      if (rolesRes.error) {
+        console.error("Failed to fetch roles:", rolesRes.error);
+      } else if (rolesRes.data) {
+        setRoles(rolesRes.data.map((r: any) => r.role as AppRole));
+      }
+    } catch (error) {
+      console.error("Error fetching profile and roles:", error);
+    }
   }, []);
 
   useEffect(() => {

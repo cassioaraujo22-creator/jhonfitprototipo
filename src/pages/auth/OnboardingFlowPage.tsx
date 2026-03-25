@@ -99,7 +99,12 @@ export default function OnboardingFlowPage() {
       .select("*")
       .eq("user_id", user.id)
       .maybeSingle()
-      .then(({ data: existing }) => {
+      .then(({ data: existing, error }) => {
+        if (error) {
+          console.error("Failed to load onboarding data:", error);
+          setLoading(false);
+          return;
+        }
         if (existing) {
           if (existing.completed) {
             navigate("/app", { replace: true });
@@ -122,6 +127,10 @@ export default function OnboardingFlowPage() {
           });
         }
         setLoading(false);
+      })
+      .catch(err => {
+        console.error("Error loading onboarding data:", err);
+        setLoading(false);
       });
   }, [user, navigate]);
 
@@ -132,19 +141,41 @@ export default function OnboardingFlowPage() {
   const saveProgress = useCallback(async () => {
     if (!user) return;
     setSaving(true);
-    const payload = { ...data, user_id: user.id, updated_at: new Date().toISOString() };
-    const { data: existing } = await supabase
-      .from("onboarding_data")
-      .select("id")
-      .eq("user_id", user.id)
-      .maybeSingle();
+    try {
+      const payload = { ...data, user_id: user.id, updated_at: new Date().toISOString() };
+      const { data: existing, error: checkError } = await supabase
+        .from("onboarding_data")
+        .select("id")
+        .eq("user_id", user.id)
+        .maybeSingle();
 
-    if (existing) {
-      await supabase.from("onboarding_data").update(payload).eq("user_id", user.id);
-    } else {
-      await supabase.from("onboarding_data").insert(payload);
+      if (checkError) {
+        console.error("Error checking onboarding data:", checkError);
+        toast.error("Erro ao salvar progresso");
+        return;
+      }
+
+      if (existing) {
+        const { error: updateError } = await supabase.from("onboarding_data").update(payload).eq("user_id", user.id);
+        if (updateError) {
+          console.error("Error updating onboarding data:", updateError);
+          toast.error("Erro ao salvar progresso");
+          return;
+        }
+      } else {
+        const { error: insertError } = await supabase.from("onboarding_data").insert(payload);
+        if (insertError) {
+          console.error("Error inserting onboarding data:", insertError);
+          toast.error("Erro ao salvar progresso");
+          return;
+        }
+      }
+    } catch (error) {
+      console.error("Unexpected error saving progress:", error);
+      toast.error("Erro inesperado ao salvar");
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   }, [user, data]);
 
   const handleNext = async () => {
@@ -154,14 +185,25 @@ export default function OnboardingFlowPage() {
     } else {
       if (!user) return;
       setSaving(true);
-      await supabase
-        .from("onboarding_data")
-        .update({ ...data, completed: true, updated_at: new Date().toISOString() })
-        .eq("user_id", user.id);
-      setSaving(false);
-      await queryClient.invalidateQueries({ queryKey: ["onboarding-check", user.id] });
-      toast.success("Perfil concluído! Vamos começar 💪");
-      navigate("/app", { replace: true });
+      try {
+        const { error } = await supabase
+          .from("onboarding_data")
+          .update({ ...data, completed: true, updated_at: new Date().toISOString() })
+          .eq("user_id", user.id);
+        if (error) {
+          console.error("Error completing onboarding:", error);
+          toast.error("Erro ao concluir perfil");
+          return;
+        }
+        await queryClient.invalidateQueries({ queryKey: ["onboarding-check", user.id] });
+        toast.success("Perfil concluído! Vamos começar 💪");
+        navigate("/app", { replace: true });
+      } catch (error) {
+        console.error("Unexpected error completing onboarding:", error);
+        toast.error("Erro inesperado ao concluir");
+      } finally {
+        setSaving(false);
+      }
     }
   };
 
